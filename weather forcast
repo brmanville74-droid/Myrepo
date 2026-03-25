@@ -1,0 +1,103 @@
+import requests
+
+GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+
+
+def get_location(city, state):
+    params = {
+        "name": city,
+        "count": 10,
+        "language": "en",
+        "format": "json"
+    }
+
+    response = requests.get(GEOCODING_URL, params=params, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+
+    if "results" not in data or not data["results"]:
+        return None
+
+    state_lower = state.strip().lower()
+
+    for place in data["results"]:
+        admin1 = place.get("admin1", "").strip().lower()
+        country_code = place.get("country_code", "").strip().upper()
+
+        if admin1 == state_lower and country_code == "US":
+            return {
+                "name": place.get("name"),
+                "state": place.get("admin1"),
+                "latitude": place.get("latitude"),
+                "longitude": place.get("longitude")
+            }
+
+    return None
+
+
+def get_forecast(latitude, longitude):
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum",
+        "temperature_unit": "fahrenheit",
+        "precipitation_unit": "inch",
+        "forecast_days": 10,
+        "timezone": "auto"
+    }
+
+    response = requests.get(FORECAST_URL, params=params, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+def print_forecast(location, forecast_data):
+    daily = forecast_data["daily"]
+    dates = daily["time"]
+    max_temps = daily["temperature_2m_max"]
+    min_temps = daily["temperature_2m_min"]
+    rain = daily["precipitation_sum"]
+
+    print(f"\n--- 10-Day Forecast for {location['name']}, {location['state']} ---")
+    print("Date         | Max Temp | Min Temp | Rain")
+    print("--------------------------------------------------")
+
+    for i in range(len(dates)):
+        print(f"{dates[i]} | {max_temps[i]:>7.1f}°F | {min_temps[i]:>7.1f}°F | {rain[i]:.3f} inch")
+
+
+def main():
+    try:
+        city = input("Enter city: ").strip()
+        state = input("Enter state: ").strip()
+
+        if not city or not state:
+            print("Error: You must enter both a city and a state.")
+            return
+
+        location = get_location(city, state)
+
+        if location is None:
+            print("Location not found. Please make sure the city and state are valid.")
+            return
+
+        forecast_data = get_forecast(location["latitude"], location["longitude"])
+        print_forecast(location, forecast_data)
+
+    except requests.exceptions.Timeout:
+        print("Error: The request timed out.")
+    except requests.exceptions.ConnectionError:
+        print("Error: Could not connect to the weather service.")
+    except requests.exceptions.HTTPError as e:
+        print(f"HTTP error: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"Request error: {e}")
+    except KeyError:
+        print("Error: Unexpected data was returned from the API.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+
+if __name__ == "__main__":
+    main()
